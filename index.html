@@ -3,10 +3,10 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Iran Locations Map</title>
+  <title>Iran Locations Map — GitHub Pages Friendly</title>
 
   <!-- Leaflet CSS -->
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="" crossorigin="" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
   <!-- MarkerCluster CSS -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
@@ -14,19 +14,19 @@
   <style>
     html,body{height:100%;margin:0}
     #map{height:100vh;width:100vw}
-
-    /* small style for popup content */
-    .loc-popup{font-family:system-ui, -apple-system, Segoe UI, Roboto, 'Helvetica Neue', Arial;}
+    .ui-top{position:absolute;right:12px;top:12px;z-index:9999}
+    .info-box{background:rgba(255,255,255,0.95);padding:8px 10px;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,0.12);font-family:system-ui,Segoe UI,Roboto,Arial}
+    .loc-popup{font-family:system-ui, -apple-system, Segoe UI, Roboto, 'Helvetica Neue', Arial}
     .loc-name{font-weight:700;margin-bottom:4px}
     .loc-city{font-size:0.9em;color:#555}
-
-    /* Custom simple marker (we'll use an inline SVG and scale it) */
-    .loc-icon-svg{transform:translateY(-6px)}
   </style>
 </head>
 <body>
 
 <div id="map" aria-label="Map of Iran showing locations"></div>
+<div class="ui-top">
+  <div class="info-box" id="status">Initializing map...</div>
+</div>
 
 <!-- Leaflet JS -->
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -34,24 +34,16 @@
 <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
 
 <script>
-/*
-  Single-file demo. Place this file (index.html) and data.json in the same folder on a web server.
-  NOTE: fetch won't work from file://. Run a simple local server, e.g.:
-    python -m http.server 8000
-  then open http://localhost:8000/iran-map-website.html
-*/
+(function(){
+  const statusEl = id('status');
+  function setStatus(s){ if(statusEl) statusEl.textContent = s; console.log('[map] '+s); }
 
-// Map initial view (center of Iran)
-const map = L.map('map', {preferCanvas: true}).setView([32.0, 53.0], 5);
+  // Initialize map
+  const map = L.map('map', {preferCanvas:true}).setView([32.0, 53.0], 5);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom:18, attribution: '© OpenStreetMap contributors'}).addTo(map);
 
-// Tile layer (OpenStreetMap)
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-  maxZoom: 18,
-  attribution: '© OpenStreetMap contributors'
-}).addTo(map);
-
-// Create a compact SVG pin as data URL for icon
-const svg = encodeURIComponent(`
+  // Create SVG icon (encoded robustly)
+  const rawSvg = `
 <svg width="26" height="34" viewBox="0 0 26 34" xmlns="http://www.w3.org/2000/svg">
   <defs>
     <linearGradient id="g" x1="0" x2="0" y1="0" y2="1">
@@ -61,110 +53,111 @@ const svg = encodeURIComponent(`
   </defs>
   <path d="M13 0C8 0 4 4 4 9c0 7 9 20 9 20s9-13 9-20c0-5-4-9-9-9z" fill="url(#g)" stroke="#9b2b2b" stroke-width="1"/>
   <circle cx="13" cy="9" r="3.6" fill="white"/>
-</svg>
-`);
-const iconUrl = `data:image/svg+xml;charset=utf-8,${svg}`;
+</svg>`;
+  // Use encodeURIComponent for data URI
+  const iconUrl = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(rawSvg);
+  const defaultIcon = L.icon({ iconUrl, iconSize:[26,34], iconAnchor:[13,34], popupAnchor:[0,-36] });
 
-const locationIcon = L.icon({
-  iconUrl,
-  iconSize: [26,34],
-  iconAnchor: [13,34],
-  popupAnchor: [0,-36],
-  tooltipAnchor: [0,-20]
-});
+  // fallback: if MarkerCluster isn't available, use LayerGroup
+  const markers = (typeof L.markerClusterGroup === 'function') ? L.markerClusterGroup({chunkedLoading:true}) : L.layerGroup();
+  map.addLayer(markers);
 
-// Marker cluster group for performance with many markers
-const markers = L.markerClusterGroup({ chunkedLoading: true, chunkProgress: updateProgress });
-map.addLayer(markers);
+  // Helpers
+  function id(i){ return document.getElementById(i); }
+  function esc(s){ return String(s||'').replace(/[&<>"']/g, function(m){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":"&#39;"}[m];}); }
 
-// Progress indicator while loading (small top-right badge)
-let progressBadge = null;
-function createProgressBadge() {
-  progressBadge = L.control({position:'topright'});
-  progressBadge.onAdd = function(){
-    const div = L.DomUtil.create('div','loading-badge');
-    div.style.background = 'rgba(255,255,255,0.9)';
-    div.style.padding = '6px 10px';
-    div.style.borderRadius = '6px';
-    div.style.boxShadow = '0 1px 4px rgba(0,0,0,0.3)';
-    div.style.fontFamily = 'system-ui, sans-serif';
-    div.style.fontSize = '13px';
-    div.innerText = 'loading...';
-    return div;
-  };
-  progressBadge.addTo(map);
-}
+  // Try to fetch data.json; if it fails, show useful diagnostics and load sample data
+  async function loadData(){
+    setStatus('Loading data.json...');
+    const pathsToTry = [
+      'data.json', // same folder
+      './data.json',
+      location.pathname.replace(/[^/]*$/, '') + 'data.json' // attempt base folder
+    ];
 
-function updateProgress(processed, total, elapsed) {
-  if(!progressBadge) createProgressBadge();
-  const pct = Math.round((processed/total)*100);
-  const el = document.querySelector('.loading-badge');
-  if(el) el.innerText = `loading ${pct}% (${processed}/${total})`;
-  if(processed === total) {
-    setTimeout(()=>{
-      if(el) el.innerText = 'done';
-      setTimeout(()=> {
-        if(el && el.parentNode) el.parentNode.removeChild(el);
-      }, 800);
-    }, 200);
-  }
-}
-
-// Utility: HTML-escape
-function esc(s){ return String(s).replace(/[&<>"']/g, function(m){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":"&#39;"}[m];}); }
-
-// Load data.json
-fetch('data.json')
-  .then(r => {
-    if(!r.ok) throw new Error('Failed to load data.json: ' + r.status);
-    return r.json();
-  })
-  .then(data => {
-    if(!Array.isArray(data)) throw new Error('data.json must be an array');
-    // Add markers
-    data.forEach(loc => {
-      // Validate
-      if(typeof loc.lat !== 'number' || typeof loc.lon !== 'number') return;
-      const m = L.marker([loc.lat, loc.lon], {icon: locationIcon, title: loc.name || ''});
-
-      // Popup content (shows on hover). Keep it compact for performance.
-      const popupHtml = `
-        <div class="loc-popup">
-          <div class="loc-name">${esc(loc.name || '')}</div>
-          <div class="loc-city">${esc(loc.city || '')}</div>
-        </div>
-      `;
-      m.bindPopup(popupHtml, {closeButton:false, offset: [0,-12]});
-
-      // Show popup on hover, hide on mouseout (improves UX)
-      m.on('mouseover', function(e){ this.openPopup(); });
-      m.on('mouseout', function(e){ this.closePopup(); });
-
-      // On click, redirect to the URL. If url is relative, it will navigate relative to current site.
-      if(loc.url){
-        m.on('click', function(){
-          // If you want to open in new tab use window.open(loc.url, '_blank')
-          window.location.href = loc.url;
-        });
+    let data = null;
+    let lastErr = null;
+    for(const p of pathsToTry){
+      try{
+        console.log('[map] trying', p);
+        const r = await fetch(p);
+        if(r.ok){
+          data = await r.json();
+          setStatus('Loaded ' + p + ' (' + (Array.isArray(data)?data.length:'?') + ' items)');
+          break;
+        } else {
+          lastErr = new Error('HTTP ' + r.status + ' when fetching ' + p);
+          console.warn(lastErr);
+        }
+      }catch(err){
+        lastErr = err;
+        console.warn('fetch error for', p, err);
       }
-
-      markers.addLayer(m);
-    });
-
-    // Fit bounds if there are locations
-    const latLngs = data.filter(d=>typeof d.lat==='number'&&typeof d.lon==='number').map(d=>[d.lat,d.lon]);
-    if(latLngs.length) {
-      const b = L.latLngBounds(latLngs);
-      map.fitBounds(b.pad(0.15));
     }
-  })
-  .catch(err => {
-    console.error(err);
-    alert('Error loading data.json: ' + err.message + '\nMake sure data.json is in the same folder and you are running a local/remote server (not file://).');
-  });
 
+    if(!data){
+      setStatus('Failed to load data.json — using sample data. Check Console for fetch errors.');
+      console.error('[map] failed to load data.json:', lastErr);
+      data = sampleData();
+    }
+
+    if(!Array.isArray(data)){
+      setStatus('data.json is not an array — using sample data.');
+      console.error('[map] data.json is not an array', data);
+      data = sampleData();
+    }
+
+    addMarkers(data);
+  }
+
+  function addMarkers(data){
+    setStatus('Adding markers...');
+    const arr = Array.from(data);
+    let count = 0;
+    arr.forEach(loc => {
+      const lat = Number(loc.lat);
+      const lon = Number(loc.lon || loc.lng || loc.longitude);
+      if(!isFinite(lat) || !isFinite(lon)) return;
+      const m = L.marker([lat, lon], {icon: defaultIcon, title: loc.name || ''});
+      const html = `<div class="loc-popup"><div class="loc-name">${esc(loc.name)}</div><div class="loc-city">${esc(loc.city)}</div></div>`;
+      m.bindPopup(html, {closeButton:false, offset:[0,-12]});
+      m.on('mouseover', function(){ this.openPopup(); });
+      m.on('mouseout', function(){ this.closePopup(); });
+      if(loc.url) m.on('click', ()=>{ window.location.href = loc.url; });
+      markers.addLayer(m);
+      count++;
+    });
+    setStatus('Added '+count+' markers');
+
+    // Fit bounds
+    try{
+      const latLngs = arr.filter(d=>isFinite(Number(d.lat))&&isFinite(Number(d.lon||d.lng))).map(d=>[Number(d.lat), Number(d.lon||d.lng)]);
+      if(latLngs.length) map.fitBounds(latLngs, {padding:[30,30]});
+    }catch(e){console.warn(e)}
+  }
+
+  function sampleData(){
+    return [
+      {"name":"Test Tehran","lat":35.6892,"lon":51.3890,"city":"Tehran","url":"/loc/test1"},
+      {"name":"Test Tabriz","lat":38.0962,"lon":46.2738,"city":"Tabriz","url":"/loc/test2"},
+      {"name":"Test Shiraz","lat":29.5918,"lon":52.5836,"city":"Shiraz","url":"/loc/shiraz"},
+      {"name":"Test Isfahan","lat":32.6546,"lon":51.6680,"city":"Isfahan","url":"/loc/isfahan"}
+    ];
+  }
+
+  // Start
+  loadData();
+
+})();
 </script>
 
+<!--
+  Notes for GitHub Pages troubleshooting (visible here in the file):
+  1) Ensure `data.json` is committed to the published branch (main, gh-pages, or /docs) and is in the same folder as this HTML.
+  2) Open DevTools (F12) -> Console/Network and look for fetch failures (404/403 or CORS). The status box (top-right) also shows quick info.
+  3) If you used a different filename or path, update the fetch path accordingly (or rename the file to data.json).
+  4) If you want the page to be reachable at the repo root, rename the file to index.html.
+-->
 
 </body>
 </html>
